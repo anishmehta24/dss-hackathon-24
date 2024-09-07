@@ -8,8 +8,8 @@ from pymongo import MongoClient
 app = Flask(__name__)
 
 # load files===========================================================================================================
-trending_products = pd.read_csv("models/trending_products.csv")
-train_data = pd.read_csv("models/clean_data.csv")
+user_data = pd.read_csv("data.csv")
+train_data = pd.read_csv("udemy.csv")
 
 # database configuration---------------------------------------
 # app.secret_key = "alskdjfwoeieiurlskdjfslkdjf"
@@ -29,6 +29,7 @@ user_collection = db['users']
 
 
 
+
 # Recommendations functions============================================================================================
 # Function to truncate product name
 def truncate(text, length):
@@ -40,7 +41,7 @@ def truncate(text, length):
 
 def content_based_recommendations(train_data, item_name, top_n=10):
     # Check if the item name exists in the training data
-    if item_name not in train_data['Name'].values:
+    if item_name not in train_data['title'].values:
         print(f"Item '{item_name}' not found in the training data.")
         return pd.DataFrame()
 
@@ -48,13 +49,13 @@ def content_based_recommendations(train_data, item_name, top_n=10):
     tfidf_vectorizer = TfidfVectorizer(stop_words='english')
 
     # Apply TF-IDF vectorization to item descriptions
-    tfidf_matrix_content = tfidf_vectorizer.fit_transform(train_data['Tags'])
+    tfidf_matrix_content = tfidf_vectorizer.fit_transform(train_data['tags'])
 
     # Calculate cosine similarity between items based on descriptions
     cosine_similarities_content = cosine_similarity(tfidf_matrix_content, tfidf_matrix_content)
 
     # Find the index of the item
-    item_index = train_data[train_data['Name'] == item_name].index[0]
+    item_index = train_data[train_data['title'] == item_name].index[0]
 
     # Get the cosine similarity scores for the item
     similar_items = list(enumerate(cosine_similarities_content[item_index]))
@@ -69,11 +70,38 @@ def content_based_recommendations(train_data, item_name, top_n=10):
     recommended_item_indices = [x[0] for x in top_similar_items]
 
     # Get the details of the top similar items
-    recommended_items_details = train_data.iloc[recommended_item_indices][['Name', 'ReviewCount', 'Brand', 'ImageURL', 'Rating']]
+    recommended_items_details = train_data.iloc[recommended_item_indices][['title', 'rating', 'num_reviews',]]
 
+    return recommended_items_details
+
+def collaborative_filtering_recommendations(target_user_id, user_data):
+    user_item_matrix = user_data.pivot_table(index='userId', columns='id', values='feedback_ratings', aggfunc='mean').fillna(0).astype(int)
+    user_similarity = cosine_similarity(user_item_matrix)
+    target_user_index = user_item_matrix.index.get_loc(target_user_id)
+    user_similarities = user_similarity[target_user_index]
+    similar_user_indices = user_similarities.argsort()[::-1][1:]
+    reccomend_items = []
+
+    for user_index in similar_user_indices:
+        rated_by_similar_user = user_item_matrix.iloc[user_index]
+        not_rated_by_target_user = (rated_by_similar_user == 0) & (user_item_matrix.iloc[target_user_index] == 0)
+        reccomend_items.extend(user_item_matrix.columns[not_rated_by_target_user][:10])
+
+    recommended_items_details = user_data[user_data['id'].isin(reccomend_items)][['title', 'rating', 'num_reviews']]
     return recommended_items_details
 # routes===============================================================================
 
+@app.route('/recommend', methods=['GET'])
+def hybrid_recommendations():
+    data = request.get_json()
+    top_n = data.get('count')
+    item_name = data.get('title')
+    target_user_id = data.get('userId')
+
+    content_based_rec = content_based_recommendations(train_data, item_name, top_n)
+    collaborative_rec = collaborative_filtering_recommendations(user_data,target_user_id,top_n)
+    hybrid_rec = pd.concat([content_based_rec, collaborative_rec]).drop_duplicates()
+    return jsonify(hybrid_rec.head(10)), 201
 
 
 @app.route("/signup", methods=['POST',])
