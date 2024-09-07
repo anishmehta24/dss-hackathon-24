@@ -24,6 +24,7 @@ db = client['dss']
 
 # Select a collection (like a table in relational databases)
 collection = db['collections']
+user_collection = db['users']
 
 
 
@@ -74,28 +75,6 @@ def content_based_recommendations(train_data, item_name, top_n=10):
 # routes===============================================================================
 
 
-# @app.route("/")
-# def index():
-#     # Create a list of random image URLs for each product
-#     random_product_image_urls = [random.choice(random_image_urls) for _ in range(len(trending_products))]
-#     price = [40, 50, 60, 70, 100, 122, 106, 50, 30, 50]
-#     return render_template('index.html',trending_products=trending_products.head(8),truncate = truncate,
-#                            random_product_image_urls=random_product_image_urls,
-#                            random_price = random.choice(price))
-
-# @app.route("/main")
-# def main():
-#     return render_template('main.html')
-
-# routes
-@app.route("/index")
-def indexredirect():
-    # Create a list of random image URLs for each product
-    random_product_image_urls = [random.choice(random_image_urls) for _ in range(len(trending_products))]
-    price = [40, 50, 60, 70, 100, 122, 106, 50, 30, 50]
-    return render_template('index.html', trending_products=trending_products.head(8), truncate=truncate,
-                           random_product_image_urls=random_product_image_urls,
-                           random_price=random.choice(price))
 
 @app.route("/signup", methods=['POST',])
 def signup():
@@ -110,15 +89,16 @@ def signup():
 
         # Create a new user document
         new_user = {
-            'topic': topic,
-            'level': level,
-            'learning_preference': learning_preference,
-            'learning_goal': learning_goal
+            'userId': str(result.inserted_id),
+            'title': topic,
+            'level_of_difficulty': level,
+            'learning_style': learning_preference,
+            'learning_goals': learning_goal
         }
 
         try:
             # Insert the document into the collection
-            result = collection.insert_one(new_user)
+            result = user_collection.insert_one(new_user)
 
             # Return the inserted document ID
             return jsonify({"message": "User created", "user_id": str(result.inserted_id)}), 201
@@ -126,44 +106,36 @@ def signup():
             return jsonify({"error": str(e)}), 500
     else:
         return jsonify({"error": "Request must be JSON"}), 400
+    
+    
+@app.route('/home', methods=['GET'])
+def search_users():
+    # Get the title from the query parameters
+    title = request.args.get('title', '')
+    
+    # Define the MongoDB collection
+    collection = user_collection
+    
+    # Find users matching the title in the tags
+    users = collection.find({
+        'tags': {'$regex': title, '$options': 'i'}
+    })
+    
 
-# Route for signup page
-@app.route('/signin', methods=['POST', 'GET'])
-def signin():
-    if request.method == 'POST':
-        username = request.form['signinUsername']
-        password = request.form['signinPassword']
-        new_signup = Signin(username=username,password=password)
-        db.session.add(new_signup)
-        db.session.commit()
+    # Convert the MongoDB cursor to a list of dictionaries
+    users_list = list(users)
+    
+    # Sort users based on rating
+    sorted_users = sorted(users_list, key=lambda x: x.get('rating', 0), reverse=True)
+    
+    # Return the sorted list as JSON
+    return jsonify(sorted_users[:10])
 
-        # Create a list of random image URLs for each product
-        random_product_image_urls = [random.choice(random_image_urls) for _ in range(len(trending_products))]
-        price = [40, 50, 60, 70, 100, 122, 106, 50, 30, 50]
-        return render_template('index.html', trending_products=trending_products.head(8), truncate=truncate,
-                               random_product_image_urls=random_product_image_urls, random_price=random.choice(price),
-                               signup_message='User signed in successfully!'
-                               )
-@app.route("/recommendations", methods=['POST', 'GET'])
-def recommendations():
-    if request.method == 'POST':
-        prod = request.form.get('prod')
-        nbr = int(request.form.get('nbr'))
-        content_based_rec = content_based_recommendations(train_data, prod, top_n=nbr)
 
-        if content_based_rec.empty:
-            message = "No recommendations available for this product."
-            return render_template('main.html', message=message)
-        else:
-            # Create a list of random image URLs for each recommended product
-            random_product_image_urls = [random.choice(random_image_urls) for _ in range(len(trending_products))]
-            print(content_based_rec)
-            print(random_product_image_urls)
 
-            price = [40, 50, 60, 70, 100, 122, 106, 50, 30, 50]
-            return render_template('main.html', content_based_rec=content_based_rec, truncate=truncate,
-                                   random_product_image_urls=random_product_image_urls,
-                                   random_price=random.choice(price))
+
+
+
 
 
 if __name__=='__main__':
