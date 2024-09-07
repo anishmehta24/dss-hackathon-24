@@ -93,7 +93,7 @@ def signup():
             'title': topic,
             'level_of_difficulty': level,
             'learning_style': learning_preference,
-            'learning_goals': learning_goal
+            'learning_goals': learning_goal,
         }
 
         try:
@@ -121,7 +121,6 @@ def search_users():
         'tags': {'$regex': title, '$options': 'i'}
     })
     
-
     # Convert the MongoDB cursor to a list of dictionaries
     users_list = list(users)
     
@@ -132,9 +131,57 @@ def search_users():
     return jsonify(sorted_users[:10])
 
 
-
-
-
+@app.route('/add_activity', methods=['POST'])
+def add_activity():
+    # Get JSON data from request
+    data = request.json
+    
+    # Check if the required fields are in the request
+    required_fields = [
+        'userId', 'id', 'previous_test_scores', 'learning_style', 
+        'learning_goals', 'course_duration', 'engagement_time_spent',
+        'module_objectives', 'assessment_scores', 'feedback_comments', 
+        'feedback_ratings', 'level_of_difficulty'
+    ]
+    
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Missing field: {field}'}), 400
+    
+    # Define the MongoDB collection
+    collection = db['activity']
+    
+    # Query for matching userId and id
+    query = {
+        'userId': {'$in': data['userId']},
+        'id': {'$in': data['id']}
+    }
+    
+    # Data to update or insert
+    update_data = {
+        '$set': {
+            'previous_test_scores': data['previous_test_scores'],
+            'learning_style': data['learning_style'],
+            'learning_goals': data['learning_goals'],
+            'course_duration': data['course_duration'],
+            'engagement_time_spent': data['engagement_time_spent'],
+            'module_objectives': data['module_objectives'],
+            'assessment_scores': data['assessment_scores'],
+            'feedback_comments': data['feedback_comments'],
+            'feedback_ratings': data['feedback_ratings'],
+            'level_of_difficulty': data['level_of_difficulty']
+        }
+    }
+    
+    # Update or insert the data
+    result = collection.update_one(query, update_data, upsert=True)
+    
+    if result.matched_count > 0:
+        message = 'Data updated successfully'
+    else:
+        message = 'Data inserted successfully'
+    
+    return jsonify({'message': message})
 
 
 
